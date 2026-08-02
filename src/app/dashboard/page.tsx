@@ -101,7 +101,12 @@ function SmartDocCard({
     );
   }
 
-  const isPdf = url.toLowerCase().includes('.pdf') || url.toLowerCase().includes('/pdf');
+  const isDocFile =
+    url.toLowerCase().includes('.pdf') ||
+    url.toLowerCase().includes('/pdf') ||
+    title.toLowerCase().includes('cv') ||
+    title.toLowerCase().includes('curriculum') ||
+    title.toLowerCase().includes('attestation');
 
   return (
     <div className="p-3 rounded-xl border border-[#E1E3E4] bg-white space-y-2 group hover:border-[#FF8C00] transition">
@@ -116,15 +121,38 @@ function SmartDocCard({
       </div>
 
       <div className="h-44 rounded-lg overflow-hidden border border-[#E1E3E4] bg-[#F8F9FA] relative flex items-center justify-center">
-        {isPdf ? (
-          <iframe src={url} className="w-full h-full border-0" title={title} />
+        {isDocFile ? (
+          <div className="w-full h-full relative group/pdf">
+            <iframe src={url} className="w-full h-full border-0 pointer-events-none" title={title} />
+            <div
+              onClick={() => onOpenZoom(url, title)}
+              className="absolute inset-0 bg-[#191C1D]/60 text-white flex flex-col items-center justify-center gap-1 cursor-pointer opacity-80 group-hover/pdf:opacity-100 transition duration-200"
+            >
+              <Maximize2 className="w-6 h-6 text-[#FF8C00]" />
+              <span className="font-bold text-xs">Cliquer pour Agrandir le Document</span>
+              <span className="text-[10px] text-[#E1E3E4]">Format PDF / Document transmis</span>
+            </div>
+          </div>
         ) : hasError ? (
-          <div className="flex flex-col items-center justify-center p-4 text-center">
-            <FileText className="w-8 h-8 text-[#FF8C00] mb-1" />
-            <span className="text-[11px] font-semibold text-[#191C1D]">Fichier Média</span>
-            <a href={url} target="_blank" rel="noreferrer" className="mt-2 text-[10px] text-[#FF8C00] font-bold hover:underline flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" /> Ouvrir dans un onglet
-            </a>
+          <div className="flex flex-col items-center justify-center p-4 text-center space-y-2">
+            <FileText className="w-8 h-8 text-[#FF8C00]" />
+            <span className="text-[11px] font-semibold text-[#191C1D]">Fichier Document Transmis</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onOpenZoom(url, title)}
+                className="px-2.5 py-1 bg-[#FFF5EC] text-[#904D00] border border-[#FF8C00]/30 rounded text-[10px] font-bold flex items-center gap-1 hover:bg-[#FFEADA]"
+              >
+                <Maximize2 className="w-3 h-3" /> Aperçu
+              </button>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1 bg-white text-[#564334] border border-[#E1E3E4] rounded text-[10px] font-bold flex items-center gap-1 hover:bg-gray-100"
+              >
+                <ExternalLink className="w-3 h-3" /> Ouvrir dans un onglet
+              </a>
+            </div>
           </div>
         ) : (
           <img
@@ -1145,10 +1173,33 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="flex-1 p-6 flex items-center justify-center overflow-auto bg-black/40">
-              {lightboxUrl.toLowerCase().includes('.pdf') ? (
-                <iframe src={lightboxUrl} className="w-full h-full rounded-lg border-0" title="PDF Preview" />
+              {lightboxUrl.toLowerCase().includes('.pdf') ||
+              lightboxUrl.toLowerCase().includes('/pdf') ||
+              lightboxTitle.toLowerCase().includes('cv') ||
+              lightboxTitle.toLowerCase().includes('curriculum') ||
+              lightboxTitle.toLowerCase().includes('attestation') ? (
+                <iframe
+                  src={lightboxUrl}
+                  className="w-full h-full rounded-xl border-0 bg-white shadow-2xl"
+                  title={lightboxTitle || 'Aperçu Document'}
+                />
               ) : (
-                <img src={lightboxUrl} alt="Document Zoom" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                <img
+                  src={lightboxUrl}
+                  alt={lightboxTitle || 'Document Zoom'}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const parent = target.parentElement;
+                    if (parent) {
+                      const iframe = document.createElement('iframe');
+                      iframe.src = lightboxUrl;
+                      iframe.className = 'w-full h-full rounded-xl border-0 bg-white shadow-2xl';
+                      iframe.title = lightboxTitle || 'Aperçu Document';
+                      parent.replaceChild(iframe, target);
+                    }
+                  }}
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
               )}
             </div>
           </div>
