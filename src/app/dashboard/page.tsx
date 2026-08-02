@@ -207,7 +207,7 @@ export default function AdminDashboardPage() {
             type: 'STUDENT',
             name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Étudiant',
             subtitle: `Étudiant - ${sp.field || sp.level || 'Formation'}`,
-            avatar: user.avatar || user.avatarUrl || (sp.selfieUrl && sp.selfieUrl !== 'data:' ? sp.selfieUrl : undefined),
+            avatar: user.avatar || user.avatarUrl,
             university: sp.university || 'Établissement',
             field: sp.field || 'N/A',
             studentId: sp.studentId || 'N/A',
@@ -1087,7 +1087,8 @@ export default function AdminDashboardPage() {
               <div className="space-y-4">
                 <h4 className="font-bold text-[#191C1D]">Pièces & Justificatifs Transmis pour Vérification :</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <SmartDocCard title="Selfie Visage" icon="📸" url={selectedValidation.selfieUrl} onOpenZoom={openLightbox} />
+                  <SmartDocCard title="Selfie Visage (Identité)" icon="📸" url={selectedValidation.selfieUrl} onOpenZoom={openLightbox} />
+                  <SmartDocCard title="Photo de Profil (Avatar Public)" icon="👤" url={selectedValidation.avatar} onOpenZoom={openLightbox} />
                   <SmartDocCard title="Pièce d'Identité RECTO" icon="🪪" url={selectedValidation.idCardRectoUrl} onOpenZoom={openLightbox} />
                   <SmartDocCard title="Pièce d'Identité VERSO" icon="🪪" url={selectedValidation.idCardVersoUrl} onOpenZoom={openLightbox} />
                   <SmartDocCard title="Carte Étudiante / Attestation" icon="🎓" url={selectedValidation.studentCardUrl} onOpenZoom={openLightbox} />
