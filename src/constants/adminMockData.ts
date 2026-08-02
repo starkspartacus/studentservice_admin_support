@@ -9,6 +9,16 @@ export interface PendingValidation {
   field?: string;
   studentId?: string;
   compteContribuable?: string;
+  registrationDocUrl?: string;
+  bannerUrl?: string;
+  videoUrl?: string;
+  perks?: string[];
+  description?: string;
+  missionValues?: string;
+  address?: string;
+  city?: string;
+  phone?: string;
+  responsibleName?: string;
   submittedAt: string;
   studentCardUrl?: string;
   selfieUrl?: string;

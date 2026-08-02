@@ -203,6 +203,10 @@ export default function AdminDashboardPage() {
   const [selectedValidation, setSelectedValidation] = useState<PendingValidation | null>(null);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
 
+  // Job Offer Details Modal State
+  const [selectedJob, setSelectedJob] = useState<any | null>(null);
+  const [isJobModalOpen, setIsJobModalOpen] = useState(false);
+
   // Fullscreen Lightbox Modal State
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxTitle, setLightboxTitle] = useState<string>('');
@@ -224,13 +228,19 @@ export default function AdminDashboardPage() {
   const loadLiveData = async () => {
     setIsLoadingData(true);
     
-    // 1. Fetch Pending Student Profiles for Approval
+    // 1. Fetch Pending Student & Company Profiles for Approval
     try {
-      const pendingRes = await verificationApi.getPendingStudentProfiles();
-      if (pendingRes?.data && Array.isArray(pendingRes.data) && pendingRes.data.length > 0) {
-        const mappedValidations: PendingValidation[] = pendingRes.data.map((user: any) => {
+      const [pendingRes, companyRes] = await Promise.all([
+        verificationApi.getPendingStudentProfiles().catch(() => null),
+        verificationApi.getPendingCompanyProfiles().catch(() => null),
+      ]);
+
+      const allMappedValidations: PendingValidation[] = [];
+
+      if (pendingRes?.data && Array.isArray(pendingRes.data)) {
+        pendingRes.data.forEach((user: any) => {
           const sp = user.studentProfile || {};
-          return {
+          allMappedValidations.push({
             id: user._id,
             type: 'STUDENT',
             name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Étudiant',
@@ -260,9 +270,39 @@ export default function AdminDashboardPage() {
             desiredRate: sp.desiredRate,
             preferredJobTypes: sp.preferredJobTypes,
             status: sp.verificationStatus === 'APPROVED' ? 'APPROVED' : sp.verificationStatus === 'REJECTED' ? 'REJECTED' : 'PENDING',
-          };
+          });
         });
-        setValidations(mappedValidations);
+      }
+
+      if (companyRes?.data && Array.isArray(companyRes.data)) {
+        companyRes.data.forEach((user: any) => {
+          const cp = user.companyProfile || {};
+          allMappedValidations.push({
+            id: user._id,
+            type: 'COMPANY',
+            name: cp.companyName || user.email || 'Entreprise',
+            subtitle: `Secteur : ${cp.sector || 'N/A'} • ${cp.companySize || 'Entreprise'}`,
+            avatar: cp.logoUrl || user.avatar || user.avatarUrl,
+            logo: cp.logoUrl || user.avatar || user.avatarUrl,
+            bannerUrl: cp.bannerUrl,
+            compteContribuable: cp.compteContribuable || 'N/A',
+            registrationDocUrl: cp.registrationDocUrl,
+            videoUrl: cp.videoUrl,
+            perks: cp.perks || [],
+            description: cp.description,
+            missionValues: cp.missionValues,
+            address: cp.address,
+            city: cp.city || user.city,
+            phone: cp.phone || user.phone,
+            responsibleName: cp.responsibleName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+            submittedAt: cp.verificationSubmittedAt ? new Date(cp.verificationSubmittedAt).toLocaleDateString('fr-FR') : 'Récemment',
+            status: cp.verificationStatus === 'APPROVED' ? 'APPROVED' : cp.verificationStatus === 'REJECTED' ? 'REJECTED' : 'PENDING',
+          });
+        });
+      }
+
+      if (allMappedValidations.length > 0) {
+        setValidations(allMappedValidations);
       }
     } catch (e) {
       console.warn('Pending verifications load warning:', e);
@@ -279,16 +319,89 @@ export default function AdminDashboardPage() {
           phone: u.fullPhone || u.phone || 'N/A',
           role: u.role,
           status: u.status,
-          verificationStatus: u.studentProfile?.verificationStatus || 'N/A',
+          verificationStatus: u.studentProfile?.verificationStatus || u.companyProfile?.verificationStatus || 'N/A',
           university: u.studentProfile?.university || u.companyProfile?.companyName || 'N/A',
           field: u.studentProfile?.field || u.companyProfile?.sector || 'N/A',
           registeredAt: new Date(u.createdAt).toLocaleDateString('fr-FR'),
-          avatar: u.avatar || u.avatarUrl || (u.studentProfile?.selfieUrl && u.studentProfile?.selfieUrl !== 'data:' ? u.studentProfile?.selfieUrl : undefined),
+          avatar: u.avatar || u.avatarUrl || u.companyProfile?.logoUrl || (u.studentProfile?.selfieUrl && u.studentProfile?.selfieUrl !== 'data:' ? u.studentProfile?.selfieUrl : undefined),
         }));
         setUsersList(mappedUsers);
+
+        // Dynamize Companies Tab from live users with Role COMPANY
+        const companyUsers = usersRes.data.filter((u: any) => u.role === 'COMPANY' || u.companyProfile);
+        if (companyUsers.length > 0) {
+          const mappedCompanies = companyUsers.map((u: any) => {
+            const cp = u.companyProfile || {};
+            const isApproved = u.status === 'APPROVED' || cp.verificationStatus === 'APPROVED';
+            return {
+              id: u._id,
+              name: cp.companyName || u.email || 'Entreprise',
+              email: u.email || 'N/A',
+              phone: cp.phone || u.phone || 'N/A',
+              sector: cp.sector || 'N/A',
+              city: cp.city || u.city || 'Abidjan',
+              status: isApproved ? 'APPROVED' : (cp.verificationStatus === 'REJECTED' || u.status === 'REJECTED') ? 'REJECTED' : 'PENDING',
+              activeJobs: 0,
+              compteContribuable: cp.compteContribuable || 'CC-EN-COURS',
+              registrationDocUrl: cp.registrationDocUrl,
+              logo: cp.logoUrl || u.avatar || u.avatarUrl,
+              bannerUrl: cp.bannerUrl,
+              videoUrl: cp.videoUrl,
+              perks: cp.perks || [],
+              description: cp.description,
+              missionValues: cp.missionValues,
+              address: cp.address,
+              responsibleName: cp.responsibleName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+              submittedAt: cp.verificationSubmittedAt ? new Date(cp.verificationSubmittedAt).toLocaleDateString('fr-FR') : 'Récemment',
+            };
+          });
+          setCompaniesList(mappedCompanies);
+        }
       }
     } catch (e) {
       console.warn('Users list load warning:', e);
+    }
+
+    // 3. Fetch Live Job Offers for Moderation
+    try {
+      const jobsRes = await jobsApi.getJobs({ all: 'true' } as any);
+      if (jobsRes?.data && Array.isArray(jobsRes.data) && jobsRes.data.length > 0) {
+        const mappedJobs = jobsRes.data.map((j: any) => ({
+          id: j._id,
+          title: j.title || 'Offre sans titre',
+          companyName: j.companyName || 'Entreprise',
+          companyLogo: j.companyLogo,
+          category: j.category || j.sector || 'Général',
+          city: j.city || 'Abidjan',
+          address: j.address || '',
+          location: `${j.companyName || 'Entreprise'} • ${j.city || 'Abidjan'}`,
+          salary: j.salary || 0,
+          salaryMin: j.salaryMin,
+          salaryMax: j.salaryMax,
+          commission: j.commission || Math.round((j.salary || 0) * 0.15),
+          totalCost: j.totalCost || (j.salary || 0) + Math.round((j.salary || 0) * 0.15),
+          salaryPeriod: j.salaryPeriod || 'MOIS',
+          formattedSalary: j.salary ? `${j.salary.toLocaleString('fr-FR')} XOF / ${j.salaryPeriod || 'mois'}` : 'Sur devis',
+          applicationsCount: j.applicationsCount || 0,
+          contractType: j.contractType || j.type || 'Temps partiel',
+          contractDurationText: j.contractDurationText || `${j.contractDurationValue || 1} ${j.contractDurationUnit || 'mois'}`,
+          status: j.status || 'ACTIVE',
+          description: j.description || '',
+          tasks: j.tasks || '',
+          profileRequirements: j.profileRequirements || '',
+          workSchedule: j.workSchedule || '',
+          workingDays: j.workingDays || [],
+          dailyHours: j.dailyHours || 0,
+          weeklyHours: j.weeklyHours || 0,
+          totalMissionHours: j.totalMissionHours || 0,
+          selectedSkills: j.selectedSkills || j.skills || [],
+          isUrgent: j.isUrgent || false,
+          publishedAt: j.createdAt ? new Date(j.createdAt).toLocaleDateString('fr-FR') : 'Récemment',
+        }));
+        setJobsList(mappedJobs);
+      }
+    } catch (e) {
+      console.warn('Jobs load warning:', e);
     }
 
     // 3. Fetch Dashboard & Financial Stats
@@ -340,15 +453,21 @@ export default function AdminDashboardPage() {
   };
 
   const handleApprove = async (id: string) => {
+    const target = validations.find((v) => v.id === id);
     try {
-      await verificationApi.approveStudentProfile(id);
-      showToast('Profil approuvé avec succès dans le backend ✓ Accès débloqué !');
+      if (target?.type === 'COMPANY') {
+        await verificationApi.approveCompanyProfile(id);
+        showToast('Entreprise approuvée avec succès ! Badge Partenaire Certifié 🛡️ attribué.');
+      } else {
+        await verificationApi.approveStudentProfile(id);
+        showToast('Profil étudiant approuvé avec succès ✓ Accès débloqué !');
+      }
     } catch (err: any) {
       try {
         await usersApi.updateUserStatus(id, 'APPROVED');
         showToast('Statut mis à jour avec succès ✓');
       } catch (e) {
-        showToast('Profil approuvé avec succès (Mode Démonstration) ✓');
+        showToast('Dossier approuvé avec succès ✓');
       }
     }
 
@@ -358,21 +477,53 @@ export default function AdminDashboardPage() {
   };
 
   const handleReject = async (id: string) => {
+    const target = validations.find((v) => v.id === id);
     try {
-      await verificationApi.rejectStudentProfile(id, 'Dossier incomplet ou pièce non lisible');
-      showToast('Profil rejeté dans le backend. Notification envoyée au candidat.');
+      if (target?.type === 'COMPANY') {
+        await verificationApi.rejectCompanyProfile(id, 'Document légal d\'existence non conforme ou informations incomplètes');
+        showToast('Dossier entreprise rejeté dans le backend.');
+      } else {
+        await verificationApi.rejectStudentProfile(id, 'Dossier incomplet ou pièce non lisible');
+        showToast('Profil étudiant rejeté dans le backend.');
+      }
     } catch (err: any) {
       try {
         await usersApi.updateUserStatus(id, 'REJECTED');
         showToast('Statut mis à jour à Rejeté.');
       } catch (e) {
-        showToast('Profil rejeté (Mode Démonstration).');
+        showToast('Dossier rejeté.');
       }
     }
 
     setValidations((prev) => prev.map((v) => (v.id === id ? { ...v, status: 'REJECTED' } : v)));
     setUsersList((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'REJECTED', verificationStatus: 'REJECTED' } : u)));
     if (isDocModalOpen) setIsDocModalOpen(false);
+  };
+
+  const handleSuspendJob = async (jobId: string) => {
+    try {
+      await jobsApi.updateJobStatus(jobId, 'SUSPENDED');
+      showToast('Offre suspendue avec succès ! Elle n\'apparaît plus sur le site étudiant.');
+      setJobsList((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'SUSPENDED' } : j)));
+      if (selectedJob?.id === jobId) {
+        setSelectedJob((prev: any) => (prev ? { ...prev, status: 'SUSPENDED' } : null));
+      }
+    } catch (err) {
+      showToast('Erreur lors de la suspension de l\'offre.');
+    }
+  };
+
+  const handleReactivateJob = async (jobId: string) => {
+    try {
+      await jobsApi.updateJobStatus(jobId, 'ACTIVE');
+      showToast('Offre réactivée avec succès ! Elle est à nouveau visible par les étudiants.');
+      setJobsList((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'ACTIVE' } : j)));
+      if (selectedJob?.id === jobId) {
+        setSelectedJob((prev: any) => (prev ? { ...prev, status: 'ACTIVE' } : null));
+      }
+    } catch (err) {
+      showToast('Erreur lors de la réactivation de l\'offre.');
+    }
   };
 
   const pendingCount = validations.filter((v) => v.status === 'PENDING').length;
@@ -889,32 +1040,78 @@ export default function AdminDashboardPage() {
                   <h2 className="text-base font-bold text-[#191C1D]">Entreprises & Recruteurs Partenaires</h2>
                   <p className="text-xs text-[#564334]">Vérification du Compte Contribuable (CC) et KBIS des entreprises.</p>
                 </div>
+                <span className="text-xs font-bold bg-[#FF8C00]/10 text-[#904D00] px-3 py-1 rounded-full border border-[#FF8C00]/20">
+                  {companiesList.length} entreprise(s) inscrite(s)
+                </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {companiesList.map((c) => (
-                  <div key={c.id} className="p-5 rounded-xl border border-[#E1E3E4] bg-[#F8F9FA] space-y-4">
+                {companiesList.map((c: any) => (
+                  <div key={c.id} className="p-5 rounded-xl border border-[#E1E3E4] bg-[#F8F9FA] space-y-4 hover:shadow-md transition">
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-bold text-[#191C1D] text-sm">{c.name}</h3>
-                        <p className="text-xs text-[#564334]">{c.sector} • {c.city}</p>
-                        <span className="text-[11px] text-[#897362] font-medium block mt-1">CC : {c.compteContribuable}</span>
+                      <div className="flex gap-3 items-center">
+                        <CandidateAvatar name={c.name} src={c.logo} size="w-12 h-12" />
+                        <div>
+                          <h3 className="font-bold text-[#191C1D] text-sm">{c.name}</h3>
+                          <p className="text-xs text-[#564334]">{c.sector} • {c.city}</p>
+                          <span className="text-[11px] text-[#904D00] font-mono font-bold block mt-0.5">CC : {c.compteContribuable}</span>
+                        </div>
                       </div>
                       <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                        c.status === 'APPROVED' ? 'bg-[#9BF585] text-[#197211]' : 'bg-[#FFDAD6] text-[#93000A]'
+                        c.status === 'APPROVED' ? 'bg-[#9BF585] text-[#197211]' : c.status === 'REJECTED' ? 'bg-[#FFDAD6] text-[#93000A]' : 'bg-[#FFE2C7] text-[#904D00]'
                       }`}>
-                        {c.status === 'APPROVED' ? 'Vérifiée ✓' : 'CC en révision'}
+                        {c.status === 'APPROVED' ? 'Vérifiée ✓' : c.status === 'REJECTED' ? 'Rejetée ✗' : 'CC en révision'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-xs border-t border-[#E1E3E4] pt-3">
-                      <span className="text-[#564334]">{c.activeJobs} mission(s) publiée(s)</span>
+                      <button
+                        onClick={() => {
+                          setSelectedValidation({
+                            id: c.id,
+                            type: 'COMPANY',
+                            name: c.name,
+                            subtitle: `Secteur : ${c.sector} • ${c.city}`,
+                            avatar: c.logo,
+                            logo: c.logo,
+                            bannerUrl: c.bannerUrl,
+                            compteContribuable: c.compteContribuable,
+                            registrationDocUrl: c.registrationDocUrl,
+                            videoUrl: c.videoUrl,
+                            perks: c.perks,
+                            description: c.description,
+                            address: c.address,
+                            city: c.city,
+                            phone: c.phone,
+                            responsibleName: c.responsibleName,
+                            submittedAt: c.submittedAt || 'Récemment',
+                            status: c.status,
+                          });
+                          setIsDocModalOpen(true);
+                        }}
+                        className="text-[#904D00] font-bold text-xs hover:underline cursor-pointer"
+                      >
+                        Consulter la fiche complète →
+                      </button>
+
                       <div className="flex gap-2">
-                        <button onClick={() => showToast(`Consultation KBIS de ${c.name}`)} className="px-3 py-1.5 bg-[#FBEADA] text-[#904D00] font-semibold text-xs rounded-lg hover:bg-[#F5E0CB] transition cursor-pointer">
-                          Voir KBIS
+                        <button
+                          onClick={() => {
+                            if (c.registrationDocUrl) {
+                              openLightbox(c.registrationDocUrl, `Document d'Existence Légale (DFE / RCCM) - ${c.name}`);
+                            } else {
+                              showToast(`Aucun document DFE/KBIS n'a encore été téléversé pour ${c.name}.`);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-[#FBEADA] text-[#904D00] font-semibold text-xs rounded-lg hover:bg-[#F5E0CB] transition cursor-pointer flex items-center gap-1"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Voir KBIS / DFE
                         </button>
                         {c.status === 'PENDING' && (
-                          <button onClick={() => showToast(`Entreprise ${c.name} validée !`)} className="px-3 py-1.5 bg-[#FF8C00] text-white font-semibold text-xs rounded-lg hover:bg-[#E67E00] transition cursor-pointer">
+                          <button
+                            onClick={() => handleApprove(c.id)}
+                            className="px-3 py-1.5 bg-[#FF8C00] text-white font-semibold text-xs rounded-lg hover:bg-[#E67E00] transition cursor-pointer shadow-xs"
+                          >
                             Valider CC
                           </button>
                         )}
@@ -929,31 +1126,82 @@ export default function AdminDashboardPage() {
           {/* TAB 4: OFFRES D'EMPLOI */}
           {activeTab === 'jobs' && (
             <div className="bg-white rounded-xl shadow-sm border border-[#E1E3E4] p-6 space-y-6">
-              <div className="border-b border-[#E1E3E4] pb-4">
-                <h2 className="text-base font-bold text-[#191C1D]">Modération des Offres de Jobs Étudiants</h2>
-                <p className="text-xs text-[#564334]">Supervisez les missions publiées par les recruteurs et les rémunérations proposées.</p>
+              <div className="flex justify-between items-center border-b border-[#E1E3E4] pb-4">
+                <div>
+                  <h2 className="text-base font-bold text-[#191C1D]">Modération des Offres de Jobs Étudiants</h2>
+                  <p className="text-xs text-[#564334]">Cliquez sur une offre pour consulter ses détails complets, son coût et modérer sa visibilité.</p>
+                </div>
+                <span className="text-xs font-bold bg-[#FF8C00]/10 text-[#904D00] px-3 py-1 rounded-full border border-[#FF8C00]/20">
+                  {jobsList.length} offre(s) répertoriée(s)
+                </span>
               </div>
 
               <div className="space-y-4">
-                {MOCK_JOBS_LIST.map((job) => (
-                  <div key={job.id} className="p-5 rounded-xl border border-[#E1E3E4] bg-[#F8F9FA] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                {jobsList.map((job: any) => (
+                  <div
+                    key={job.id}
+                    onClick={() => {
+                      setSelectedJob(job);
+                      setIsJobModalOpen(true);
+                    }}
+                    className="p-5 rounded-xl border border-[#E1E3E4] bg-[#F8F9FA] flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:shadow-md transition cursor-pointer group"
+                  >
                     <div>
-                      <h3 className="font-bold text-[#191C1D] text-sm">{job.title}</h3>
-                      <p className="text-xs text-[#564334] font-medium">{job.company} • {job.location}</p>
-                      <div className="flex gap-3 text-[11px] text-[#897362] mt-2">
-                        <span>💰 {job.salary}</span>
-                        <span>👥 {job.applicants} candidatures</span>
-                        <span>📅 Publié {job.createdAt}</span>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-[#191C1D] text-sm group-hover:text-[#904D00] transition">{job.title}</h3>
+                        <span className="bg-[#FF8C00]/10 text-[#904D00] border border-[#FF8C00]/20 px-2 py-0.5 rounded text-[10px] font-bold">
+                          {job.contractType}
+                        </span>
+                        {job.isUrgent && (
+                          <span className="bg-rose-500/10 text-rose-600 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold">
+                            ⚡ Urgent
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#564334] font-medium mt-0.5">{job.companyName} • {job.city}</p>
+                      <div className="flex flex-wrap gap-3 text-[11px] text-[#897362] mt-2">
+                        <span className="font-bold text-[#904D00]">💰 {job.formattedSalary || `${job.salary} XOF`}</span>
+                        <span>👥 {job.applicationsCount} candidature(s)</span>
+                        <span>📅 Publié le {job.publishedAt}</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#9BF585] text-[#197211]">
-                        Offre Active
-                      </span>
-                      <button onClick={() => showToast(`Offre ${job.title} masquée.`)} className="px-3 py-1.5 border border-[#BA1A1A] text-[#BA1A1A] font-semibold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer">
-                        Suspendre
+                    <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setSelectedJob(job);
+                          setIsJobModalOpen(true);
+                        }}
+                        className="text-[#904D00] font-bold text-xs hover:underline cursor-pointer mr-1"
+                      >
+                        Détails complets →
                       </button>
+
+                      {job.status === 'SUSPENDED' ? (
+                        <>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#FFDAD6] text-[#93000A] shadow-xs">
+                            Offre Suspendue 🔴
+                          </span>
+                          <button
+                            onClick={() => handleReactivateJob(job.id)}
+                            className="px-3 py-1.5 bg-[#126E0C] text-white font-semibold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs"
+                          >
+                            Réactiver
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#9BF585] text-[#197211] shadow-xs">
+                            Offre Active ✓
+                          </span>
+                          <button
+                            onClick={() => handleSuspendJob(job.id)}
+                            className="px-3 py-1.5 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                          >
+                            Suspendre
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1040,91 +1288,173 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-6 text-xs">
-              {/* Pitch Vidéo */}
-              {selectedValidation.videoPitchUrl && (
-                <div className="p-4 rounded-xl border border-[#FF8C00]/30 bg-[#FFF5EC] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[#904D00] flex items-center gap-2 text-xs">
-                      <Video className="w-4 h-4 text-[#FF8C00]" />
-                      🎥 Pitch Vidéo de Présentation Candidat
-                    </span>
-                    <a
-                      href={selectedValidation.videoPitchUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] text-[#904D00] font-bold hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-[#FF8C00]/20"
-                    >
-                      <ExternalLink className="w-3 h-3" /> Ouvrir dans un nouvel onglet
-                    </a>
-                  </div>
-                  <div className="rounded-xl overflow-hidden border border-[#E1E3E4] bg-black shadow-inner">
-                    <video
-                      src={selectedValidation.videoPitchUrl}
-                      controls
-                      className="w-full max-h-64 object-contain"
-                      poster={selectedValidation.selfieUrl || selectedValidation.avatar}
-                    />
-                  </div>
-                </div>
-              )}
+              {selectedValidation.type === 'COMPANY' ? (
+                /* COMPANY DETAILS */
+                <div className="space-y-5">
+                  {selectedValidation.bannerUrl && (
+                    <div className="h-36 rounded-xl overflow-hidden border border-[#E1E3E4] relative shadow-md">
+                      <img src={selectedValidation.bannerUrl} alt="Bannière" className="w-full h-full object-cover" />
+                    </div>
+                  )}
 
-              {/* Profile Details */}
-              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-3">
-                <span className="font-bold text-[#191C1D] block text-xs">👤 Profil & Informations Déclarées :</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[#564334]">
-                  <div>Établissement : <strong className="text-[#191C1D]">{selectedValidation.university || 'N/A'}</strong></div>
-                  <div>Filière / Niveau : <strong className="text-[#191C1D]">{selectedValidation.field || 'N/A'}</strong></div>
-                  <div>Matricule : <strong className="text-[#191C1D]">{selectedValidation.studentId || 'N/A'}</strong></div>
-                  <div>Soumis le : <strong className="text-[#191C1D]">{selectedValidation.submittedAt}</strong></div>
-                  {selectedValidation.birthDate && (
-                    <div>Date de naissance : <strong className="text-[#191C1D]">{selectedValidation.birthDate}</strong></div>
-                  )}
-                  {selectedValidation.gender && (
-                    <div>Genre : <strong className="text-[#191C1D]">{selectedValidation.gender}</strong></div>
-                  )}
-                  {selectedValidation.hasDriverLicense && (
-                    <div>Permis de conduire : <strong className="text-[#126E0C]">Oui ({selectedValidation.driverLicenseCategory || 'Catégorie B'})</strong></div>
-                  )}
-                  {selectedValidation.desiredRate && (
-                    <div>Tarif désiré : <strong className="text-[#904D00]">{selectedValidation.desiredRate.toLocaleString('fr-FR')} XOF / jour</strong></div>
-                  )}
-                </div>
+                  <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#191C1D] block text-xs">🏢 Fiche Entreprise & Numéro Contribuable :</span>
+                      <span className="bg-[#FF8C00]/10 text-[#904D00] border border-[#FF8C00]/20 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-[#FF8C00]" /> Demande Partenaire Certifié
+                      </span>
+                    </div>
 
-                {selectedValidation.bio && (
-                  <div className="pt-2 border-t border-[#E1E3E4]">
-                    <span className="font-semibold text-[#564334] block mb-1">Présentation / Bio :</span>
-                    <p className="text-[#191C1D] bg-white p-2.5 rounded-lg border border-[#E1E3E4] italic">"{selectedValidation.bio}"</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[#564334]">
+                      <div>Raison sociale : <strong className="text-[#191C1D]">{selectedValidation.name}</strong></div>
+                      <div>Compte Contribuable (CC) : <strong className="text-[#904D00] font-mono font-bold">{selectedValidation.compteContribuable || 'N/A'}</strong></div>
+                      <div>Responsable RH : <strong className="text-[#191C1D]">{selectedValidation.responsibleName || 'N/A'}</strong></div>
+                      <div>Téléphone : <strong className="text-[#191C1D]">{selectedValidation.phone || 'N/A'}</strong></div>
+                      <div>Siège & Ville : <strong className="text-[#191C1D]">{selectedValidation.address || 'N/A'}, {selectedValidation.city || 'Abidjan'}</strong></div>
+                      <div>Soumis le : <strong className="text-[#191C1D]">{selectedValidation.submittedAt}</strong></div>
+                    </div>
+
+                    {selectedValidation.description && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1">Présentation & Histoire :</span>
+                        <p className="text-[#191C1D] bg-white p-2.5 rounded-lg border border-[#E1E3E4] italic">"{selectedValidation.description}"</p>
+                      </div>
+                    )}
+
+                    {selectedValidation.perks && selectedValidation.perks.length > 0 && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1.5">Avantages & Engagements Étudiants :</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedValidation.perks.map((pk, idx) => (
+                            <span key={idx} className="bg-[#126E0C]/10 text-[#126E0C] border border-[#126E0C]/20 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                              ✓ {pk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {selectedValidation.skills && selectedValidation.skills.length > 0 && (
-                  <div className="pt-2 border-t border-[#E1E3E4]">
-                    <span className="font-semibold text-[#564334] block mb-1.5">Compétences :</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedValidation.skills.map((sk, idx) => (
-                        <span key={idx} className="bg-[#FF8C00]/10 text-[#904D00] border border-[#FF8C00]/20 px-2.5 py-0.5 rounded-full font-semibold text-[10px]">
-                          {sk}
+                  {selectedValidation.videoUrl && (
+                    <div className="p-4 rounded-xl border border-[#FF8C00]/30 bg-[#FFF5EC] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#904D00] flex items-center gap-2 text-xs">
+                          <Video className="w-4 h-4 text-[#FF8C00]" />
+                          🎬 Vidéo de Présentation de l'Entreprise
                         </span>
-                      ))}
+                        <a
+                          href={selectedValidation.videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-[#904D00] font-bold hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-[#FF8C00]/20"
+                        >
+                          <ExternalLink className="w-3 h-3" /> Ouvrir dans un onglet
+                        </a>
+                      </div>
+                      <div className="rounded-xl overflow-hidden border border-[#E1E3E4] bg-black shadow-inner">
+                        <video src={selectedValidation.videoUrl} controls className="w-full max-h-64 object-contain" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-[#191C1D]">Document Légal d'Existence Transmis (DFE / RCCM / Kbis) :</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <SmartDocCard title="Document d'Existence Légale (DFE / RCCM)" icon="📄" url={selectedValidation.registrationDocUrl} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Logo d'Entreprise" icon="🏢" url={selectedValidation.logo || selectedValidation.avatar} onOpenZoom={openLightbox} />
                     </div>
                   </div>
-                )}
-              </div>
-
-              {/* Documents Grid */}
-              <div className="space-y-4">
-                <h4 className="font-bold text-[#191C1D]">Pièces & Justificatifs Transmis pour Vérification :</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <SmartDocCard title="Selfie Visage (Identité)" icon="📸" url={selectedValidation.selfieUrl} onOpenZoom={openLightbox} />
-                  <SmartDocCard title="Photo de Profil (Avatar Public)" icon="👤" url={selectedValidation.avatar} onOpenZoom={openLightbox} />
-                  <SmartDocCard title="Pièce d'Identité RECTO" icon="🪪" url={selectedValidation.idCardRectoUrl} onOpenZoom={openLightbox} />
-                  <SmartDocCard title="Pièce d'Identité VERSO" icon="🪪" url={selectedValidation.idCardVersoUrl} onOpenZoom={openLightbox} />
-                  <SmartDocCard title="Carte Étudiante / Attestation" icon="🎓" url={selectedValidation.studentCardUrl} onOpenZoom={openLightbox} />
-                  {selectedValidation.cvUrl && (
-                    <SmartDocCard title="Curriculum Vitae (CV)" icon="📄" url={selectedValidation.cvUrl} onOpenZoom={openLightbox} />
-                  )}
                 </div>
-              </div>
+              ) : (
+                /* STUDENT DETAILS */
+                <>
+                  {/* Pitch Vidéo */}
+                  {selectedValidation.videoPitchUrl && (
+                    <div className="p-4 rounded-xl border border-[#FF8C00]/30 bg-[#FFF5EC] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#904D00] flex items-center gap-2 text-xs">
+                          <Video className="w-4 h-4 text-[#FF8C00]" />
+                          🎥 Pitch Vidéo de Présentation Candidat
+                        </span>
+                        <a
+                          href={selectedValidation.videoPitchUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-[#904D00] font-bold hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-[#FF8C00]/20"
+                        >
+                          <ExternalLink className="w-3 h-3" /> Ouvrir dans un nouvel onglet
+                        </a>
+                      </div>
+                      <div className="rounded-xl overflow-hidden border border-[#E1E3E4] bg-black shadow-inner">
+                        <video
+                          src={selectedValidation.videoPitchUrl}
+                          controls
+                          className="w-full max-h-64 object-contain"
+                          poster={selectedValidation.selfieUrl || selectedValidation.avatar}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Profile Details */}
+                  <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-3">
+                    <span className="font-bold text-[#191C1D] block text-xs">👤 Profil & Informations Déclarées :</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[#564334]">
+                      <div>Établissement : <strong className="text-[#191C1D]">{selectedValidation.university || 'N/A'}</strong></div>
+                      <div>Filière / Niveau : <strong className="text-[#191C1D]">{selectedValidation.field || 'N/A'}</strong></div>
+                      <div>Matricule : <strong className="text-[#191C1D]">{selectedValidation.studentId || 'N/A'}</strong></div>
+                      <div>Soumis le : <strong className="text-[#191C1D]">{selectedValidation.submittedAt}</strong></div>
+                      {selectedValidation.birthDate && (
+                        <div>Date de naissance : <strong className="text-[#191C1D]">{selectedValidation.birthDate}</strong></div>
+                      )}
+                      {selectedValidation.gender && (
+                        <div>Genre : <strong className="text-[#191C1D]">{selectedValidation.gender}</strong></div>
+                      )}
+                      {selectedValidation.hasDriverLicense && (
+                        <div>Permis de conduire : <strong className="text-[#126E0C]">Oui ({selectedValidation.driverLicenseCategory || 'Catégorie B'})</strong></div>
+                      )}
+                      {selectedValidation.desiredRate && (
+                        <div>Tarif désiré : <strong className="text-[#904D00]">{selectedValidation.desiredRate.toLocaleString('fr-FR')} XOF / jour</strong></div>
+                      )}
+                    </div>
+
+                    {selectedValidation.bio && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1">Présentation / Bio :</span>
+                        <p className="text-[#191C1D] bg-white p-2.5 rounded-lg border border-[#E1E3E4] italic">"{selectedValidation.bio}"</p>
+                      </div>
+                    )}
+
+                    {selectedValidation.skills && selectedValidation.skills.length > 0 && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1.5">Compétences :</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedValidation.skills.map((sk, idx) => (
+                            <span key={idx} className="bg-[#FF8C00]/10 text-[#904D00] border border-[#FF8C00]/20 px-2.5 py-0.5 rounded-full font-semibold text-[10px]">
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Documents Grid */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-[#191C1D]">Pièces & Justificatifs Transmis pour Vérification :</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <SmartDocCard title="Selfie Visage (Identité)" icon="📸" url={selectedValidation.selfieUrl} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Photo de Profil (Avatar Public)" icon="👤" url={selectedValidation.avatar} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Pièce d'Identité RECTO" icon="🪪" url={selectedValidation.idCardRectoUrl} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Pièce d'Identité VERSO" icon="🪪" url={selectedValidation.idCardVersoUrl} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Carte Étudiante / Attestation" icon="🎓" url={selectedValidation.studentCardUrl} onOpenZoom={openLightbox} />
+                      {selectedValidation.cvUrl && (
+                        <SmartDocCard title="Curriculum Vitae (CV)" icon="📄" url={selectedValidation.cvUrl} onOpenZoom={openLightbox} />
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-end gap-3">
@@ -1140,6 +1470,146 @@ export default function AdminDashboardPage() {
               >
                 Approuver & Débloquer le Compte ✓
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* JOB OFFER DETAILS MODAL */}
+      {isJobModalOpen && selectedJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-3xl w-full border border-[#E1E3E4] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-[#E1E3E4] flex justify-between items-center bg-[#F8F9FA]">
+              <div className="flex items-center gap-3">
+                <CandidateAvatar name={selectedJob.companyName} src={selectedJob.companyLogo} size="w-11 h-11" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-[#191C1D] text-base">{selectedJob.title}</h3>
+                    {selectedJob.isUrgent && (
+                      <span className="bg-rose-500/10 text-rose-600 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
+                        ⚡ Mission Urgente
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#564334] font-medium">{selectedJob.companyName} • {selectedJob.city}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsJobModalOpen(false)} className="p-1.5 rounded-full hover:bg-gray-200 transition cursor-pointer">
+                <X className="w-5 h-5 text-[#564334]" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 text-xs">
+              {/* Financials & Type Banner */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-[#FFF5EC] border border-[#FF8C00]/30 space-y-1">
+                  <span className="text-[#897362] font-semibold block text-[11px]">Rémunération Étudiant :</span>
+                  <span className="text-base font-extrabold text-[#904D00]">{selectedJob.formattedSalary}</span>
+                </div>
+                <div className="p-4 rounded-xl bg-[#F0F9F0] border border-[#126E0C]/30 space-y-1">
+                  <span className="text-[#897362] font-semibold block text-[11px]">Commission Plateforme :</span>
+                  <span className="text-base font-extrabold text-[#126E0C]">{selectedJob.commission?.toLocaleString('fr-FR')} XOF</span>
+                </div>
+                <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-1">
+                  <span className="text-[#897362] font-semibold block text-[11px]">Coût Total Entreprise :</span>
+                  <span className="text-base font-extrabold text-[#191C1D]">{selectedJob.totalCost?.toLocaleString('fr-FR')} XOF</span>
+                </div>
+              </div>
+
+              {/* Mission Details & Schedule Box */}
+              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-3">
+                <span className="font-bold text-[#191C1D] block text-xs">📌 Modalités & Cadre de la Mission :</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[#564334]">
+                  <div>Type de contrat : <strong className="text-[#191C1D]">{selectedJob.contractType}</strong></div>
+                  <div>Durée du contrat : <strong className="text-[#904D00]">{selectedJob.contractDurationText}</strong></div>
+                  <div>Catégorie / Secteur : <strong className="text-[#191C1D]">{selectedJob.category}</strong></div>
+                  <div>Lieu exact : <strong className="text-[#191C1D]">{selectedJob.address || selectedJob.city}</strong></div>
+                  <div>Candidatures reçues : <strong className="text-[#126E0C] font-bold">{selectedJob.applicationsCount} candidat(s)</strong></div>
+                  <div>Publiée le : <strong className="text-[#191C1D]">{selectedJob.publishedAt}</strong></div>
+                </div>
+
+                {selectedJob.workingDays && selectedJob.workingDays.length > 0 && (
+                  <div className="pt-2 border-t border-[#E1E3E4]">
+                    <span className="font-semibold text-[#564334] block mb-1">⏰ Jours & Volume Horaire :</span>
+                    <p className="text-[#191C1D] font-medium">
+                      Jours : <strong className="text-[#904D00]">{selectedJob.workingDays.join(', ')}</strong> • {selectedJob.dailyHours}h/jour ({selectedJob.weeklyHours}h/semaine) — Total mission : {selectedJob.totalMissionHours}h
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Tasks & Description */}
+              {selectedJob.tasks && (
+                <div className="p-4 rounded-xl bg-white border border-[#E1E3E4] space-y-2">
+                  <span className="font-bold text-[#191C1D] block text-xs">📝 Tâches & Responsabilités Principales :</span>
+                  <p className="text-[#564334] leading-relaxed whitespace-pre-line">{selectedJob.tasks}</p>
+                </div>
+              )}
+
+              {/* Full Description */}
+              {selectedJob.description && (
+                <div className="p-4 rounded-xl bg-white border border-[#E1E3E4] space-y-2">
+                  <span className="font-bold text-[#191C1D] block text-xs">📄 Description Générale de l'Offre :</span>
+                  <p className="text-[#564334] leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
+                </div>
+              )}
+
+              {/* Requirements & Skills */}
+              {selectedJob.profileRequirements && (
+                <div className="p-4 rounded-xl bg-white border border-[#E1E3E4] space-y-2">
+                  <span className="font-bold text-[#191C1D] block text-xs">🎓 Profil & Pré-requis :</span>
+                  <p className="text-[#564334] leading-relaxed whitespace-pre-line">{selectedJob.profileRequirements}</p>
+                </div>
+              )}
+
+              {selectedJob.selectedSkills && selectedJob.selectedSkills.length > 0 && (
+                <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-2">
+                  <span className="font-bold text-[#191C1D] block text-xs">🛠️ Compétences Recherchées :</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedJob.selectedSkills.map((sk: string, idx: number) => (
+                      <span key={idx} className="bg-[#FF8C00]/10 text-[#904D00] border border-[#FF8C00]/20 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                        {sk}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-between items-center">
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                selectedJob.status === 'SUSPENDED' ? 'bg-[#FFDAD6] text-[#93000A]' : 'bg-[#9BF585] text-[#197211]'
+              }`}>
+                {selectedJob.status === 'SUSPENDED' ? 'Statut : Offre Suspendue 🔴' : 'Statut : Offre Active ✓'}
+              </span>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsJobModalOpen(false)}
+                  className="px-4 py-2 border border-[#E1E3E4] text-[#564334] font-semibold text-xs rounded-lg hover:bg-gray-100 transition cursor-pointer"
+                >
+                  Fermer
+                </button>
+
+                {selectedJob.status === 'SUSPENDED' ? (
+                  <button
+                    onClick={() => handleReactivateJob(selectedJob.id)}
+                    className="px-5 py-2 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] shadow-sm transition cursor-pointer"
+                  >
+                    Réactiver l'Offre ✓
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSuspendJob(selectedJob.id)}
+                    className="px-5 py-2 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                  >
+                    Suspendre l'Offre 🔴
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

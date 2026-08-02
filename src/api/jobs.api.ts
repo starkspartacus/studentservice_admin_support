@@ -16,4 +16,12 @@ export const jobsApi = {
     const response = await axiosInstance.get(`/jobs/${jobId}`);
     return response.data;
   },
+
+  /**
+   * Update job status (Moderate / Suspend / Reactivate)
+   */
+  updateJobStatus: async (jobId: string, status: string) => {
+    const response = await axiosInstance.patch(`/jobs/${jobId}/status`, { status });
+    return response.data;
+  },
 };

@@ -47,4 +47,30 @@ export const verificationApi = {
     });
     return response.data;
   },
+
+  /**
+   * Get list of pending company profiles requiring admin approval
+   */
+  getPendingCompanyProfiles: async (page = 1, limit = 20) => {
+    const response = await axiosInstance.get('/verification/companies/pending', {
+      params: { page, limit },
+    });
+    return response.data;
+  },
+
+  /**
+   * Approve a company's profile & grant Partner Certificate Badge 🛡️
+   */
+  approveCompanyProfile: async (companyUserId: string) => {
+    const response = await axiosInstance.patch(`/verification/company/${companyUserId}/approve`);
+    return response.data;
+  },
+
+  /**
+   * Reject a company's profile with a specific reason
+   */
+  rejectCompanyProfile: async (companyUserId: string, reason: string) => {
+    const response = await axiosInstance.patch(`/verification/company/${companyUserId}/reject`, { reason });
+    return response.data;
+  },
 };
