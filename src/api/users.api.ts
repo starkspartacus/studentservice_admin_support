@@ -5,7 +5,7 @@ export const usersApi = {
    * Get paginated list of users (Students, Companies, Admins)
    */
   getUsers: async (params?: { role?: string; status?: string; search?: string; page?: number; limit?: number }) => {
-    const response = await axiosInstance.get('/users', { params });
+    const response = await axiosInstance.get('/admin/users', { params });
     return response.data;
   },
 

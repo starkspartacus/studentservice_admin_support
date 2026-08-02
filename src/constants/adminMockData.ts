@@ -14,6 +14,21 @@ export interface PendingValidation {
   selfieUrl?: string;
   idCardRectoUrl?: string;
   idCardVersoUrl?: string;
+  videoPitchUrl?: string;
+  cvUrl?: string;
+  bio?: string;
+  skills?: string[];
+  languages?: string[];
+  socials?: { linkedin?: string; github?: string; facebook?: string; twitter?: string; instagram?: string };
+  birthDate?: string;
+  gender?: string;
+  maritalStatus?: string;
+  hasDriverLicense?: boolean;
+  driverLicenseCategory?: string;
+  whatsapp?: string;
+  hobbies?: string[];
+  desiredRate?: number;
+  preferredJobTypes?: string[];
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
