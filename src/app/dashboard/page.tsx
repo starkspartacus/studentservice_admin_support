@@ -312,47 +312,70 @@ export default function AdminDashboardPage() {
     try {
       const usersRes = await usersApi.getUsers();
       if (usersRes?.data && Array.isArray(usersRes.data) && usersRes.data.length > 0) {
-        const mappedUsers = usersRes.data.map((u: any) => ({
-          id: u._id,
-          name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
-          email: u.email || 'N/A',
-          phone: u.fullPhone || u.phone || 'N/A',
-          role: u.role,
-          status: u.status,
-          verificationStatus: u.studentProfile?.verificationStatus || u.companyProfile?.verificationStatus || 'N/A',
-          university: u.studentProfile?.university || u.companyProfile?.companyName || 'N/A',
-          field: u.studentProfile?.field || u.companyProfile?.sector || 'N/A',
-          registeredAt: new Date(u.createdAt).toLocaleDateString('fr-FR'),
-          avatar: u.avatar || u.avatarUrl || u.companyProfile?.logoUrl || (u.studentProfile?.selfieUrl && u.studentProfile?.selfieUrl !== 'data:' ? u.studentProfile?.selfieUrl : undefined),
-        }));
+        const mappedUsers = usersRes.data.map((u: any) => {
+          const vStatus = u.role === 'INDIVIDUAL'
+            ? (u.individualProfile?.verificationStatus || 'PENDING_REVIEW')
+            : u.role === 'COMPANY'
+            ? (u.companyProfile?.verificationStatus || 'PENDING_REVIEW')
+            : (u.studentProfile?.verificationStatus || (u.status === 'APPROVED' ? 'APPROVED' : 'PENDING_REVIEW'));
+
+          const computedStatus = u.status === 'APPROVED' || vStatus === 'APPROVED'
+            ? 'APPROVED'
+            : u.status === 'REJECTED' || vStatus === 'REJECTED'
+            ? 'REJECTED'
+            : 'PENDING';
+
+          return {
+            id: u._id,
+            name: u.role === 'INDIVIDUAL'
+              ? (u.individualProfile?.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email)
+              : `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+            email: u.email || 'N/A',
+            phone: u.fullPhone || u.phone || (u.role === 'INDIVIDUAL' ? u.individualProfile?.phone : 'N/A'),
+            role: u.role,
+            status: computedStatus,
+            verificationStatus: vStatus,
+            university: u.role === 'INDIVIDUAL'
+              ? (u.individualProfile?.activityType || 'Particulier & Informel')
+              : (u.studentProfile?.university || u.companyProfile?.companyName || 'N/A'),
+            field: u.role === 'INDIVIDUAL'
+              ? (u.individualProfile?.city || u.city || 'Abidjan')
+              : (u.studentProfile?.field || u.companyProfile?.sector || 'N/A'),
+            registeredAt: new Date(u.createdAt).toLocaleDateString('fr-FR'),
+            avatar: u.avatar || u.avatarUrl || u.companyProfile?.logoUrl || u.individualProfile?.avatarUrl || (u.studentProfile?.selfieUrl && u.studentProfile?.selfieUrl !== 'data:' ? u.studentProfile?.selfieUrl : undefined),
+            raw: u,
+          };
+        });
         setUsersList(mappedUsers);
 
-        // Dynamize Companies Tab from live users with Role COMPANY
-        const companyUsers = usersRes.data.filter((u: any) => u.role === 'COMPANY' || u.companyProfile);
+        // Dynamize Companies Tab from live users with Role COMPANY or INDIVIDUAL
+        const companyUsers = usersRes.data.filter((u: any) => u.role === 'COMPANY' || u.role === 'INDIVIDUAL' || u.companyProfile || u.individualProfile);
         if (companyUsers.length > 0) {
           const mappedCompanies = companyUsers.map((u: any) => {
-            const cp = u.companyProfile || {};
+            const isIndividual = u.role === 'INDIVIDUAL';
+            const cp = isIndividual ? (u.individualProfile || {}) : (u.companyProfile || {});
             const isApproved = u.status === 'APPROVED' || cp.verificationStatus === 'APPROVED';
             return {
               id: u._id,
-              name: cp.companyName || u.email || 'Entreprise',
+              name: isIndividual ? (cp.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email) : (cp.companyName || u.email || 'Entreprise'),
               email: u.email || 'N/A',
               phone: cp.phone || u.phone || 'N/A',
-              sector: cp.sector || 'N/A',
+              sector: isIndividual ? (cp.activityType || 'Particulier & Informel') : (cp.sector || 'N/A'),
               city: cp.city || u.city || 'Abidjan',
               status: isApproved ? 'APPROVED' : (cp.verificationStatus === 'REJECTED' || u.status === 'REJECTED') ? 'REJECTED' : 'PENDING',
               activeJobs: 0,
-              compteContribuable: cp.compteContribuable || 'CC-EN-COURS',
-              registrationDocUrl: cp.registrationDocUrl,
-              logo: cp.logoUrl || u.avatar || u.avatarUrl,
-              bannerUrl: cp.bannerUrl,
+              compteContribuable: isIndividual ? 'PARTICULIER' : (cp.compteContribuable || 'CC-EN-COURS'),
+              registrationDocUrl: cp.registrationDocUrl || cp.idCardRectoUrl,
+              logo: cp.logoUrl || cp.avatarUrl || u.avatar || u.avatarUrl,
+              bannerUrl: cp.bannerUrl || cp.selfieUrl,
               videoUrl: cp.videoUrl,
-              perks: cp.perks || [],
-              description: cp.description,
+              perks: cp.perks || cp.preferredNeeds || [],
+              description: cp.description || cp.bio,
               missionValues: cp.missionValues,
               address: cp.address,
-              responsibleName: cp.responsibleName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+              responsibleName: cp.responsibleName || cp.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
               submittedAt: cp.verificationSubmittedAt ? new Date(cp.verificationSubmittedAt).toLocaleDateString('fr-FR') : 'Récemment',
+              role: u.role,
             };
           });
           setCompaniesList(mappedCompanies);
@@ -446,6 +469,47 @@ export default function AdminDashboardPage() {
 
     loadLiveData();
   }, [router]);
+
+  const openDocumentModalForUser = (user: any) => {
+    const raw = user.raw || user || {};
+    const sp = raw.studentProfile || user.studentProfile || {};
+    const cp = raw.companyProfile || user.companyProfile || {};
+    const ip = raw.individualProfile || user.individualProfile || {};
+
+    const idCardUrl = ip.idCardRectoUrl || user.idCardRectoUrl || user.registrationDocUrl || cp.registrationDocUrl || sp.idCardRectoUrl;
+    const selfieUrl = ip.selfieUrl || user.selfieUrl || user.bannerUrl || sp.selfieUrl || cp.bannerUrl || ip.avatarUrl || user.avatar;
+
+    const userRole = user.role || user.type || raw.role;
+
+    const v: PendingValidation = {
+      id: user.id || user._id || raw._id,
+      type: userRole,
+      name: user.name || (userRole === 'INDIVIDUAL' ? (ip.fullName || `${raw.firstName || ''} ${raw.lastName || ''}`.trim()) : `${raw.firstName || ''} ${raw.lastName || ''}`.trim()),
+      subtitle: userRole === 'INDIVIDUAL' 
+        ? `Particulier - ${ip.activityType || user.subtitle || 'Informel'}`
+        : userRole === 'COMPANY'
+        ? `Entreprise - ${cp.sector || user.field || 'Secteur'}`
+        : `Étudiant - ${sp.field || user.field || 'Formation'}`,
+      avatar: ip.avatarUrl || cp.logoUrl || sp.selfieUrl || raw.avatar || user.avatar,
+      city: ip.city || cp.city || raw.city || user.city || 'Abidjan',
+      phone: ip.phone || cp.phone || raw.fullPhone || raw.phone || user.phone,
+      email: raw.email || user.email,
+      responsibleName: cp.responsibleName || ip.fullName || user.name,
+      idCardRectoUrl: idCardUrl,
+      idCardVersoUrl: ip.idCardVersoUrl || sp.idCardVersoUrl || user.idCardVersoUrl,
+      selfieUrl: selfieUrl,
+      registrationDocUrl: idCardUrl,
+      studentCardUrl: sp.studentCardUrl || user.studentCardUrl,
+      cvUrl: sp.cvUrl || user.cvUrl,
+      bio: ip.bio || cp.description || sp.bio || user.bio,
+      perks: ip.preferredNeeds || cp.perks || user.perks,
+      compteContribuable: cp.compteContribuable || (userRole === 'INDIVIDUAL' ? 'PARTICULIER' : undefined),
+      submittedAt: user.registeredAt || user.submittedAt || 'Récemment',
+      status: (user.status === 'APPROVED' || user.verificationStatus === 'APPROVED') ? 'APPROVED' : (user.status === 'REJECTED' || user.verificationStatus === 'REJECTED') ? 'REJECTED' : 'PENDING',
+    };
+    setSelectedValidation(v);
+    setIsDocModalOpen(true);
+  };
 
   const handleLogout = async () => {
     await authApi.logout();
@@ -957,8 +1021,9 @@ export default function AdminDashboardPage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-[#E1E3E4] bg-[#F8F9FA] text-[#564334]">
-                      <th className="p-3 font-semibold">Candidat / Étudiant</th>
-                      <th className="p-3 font-semibold">Établissement & Filière</th>
+                      <th className="p-3 font-semibold">Candidat / Compte</th>
+                      <th className="p-3 font-semibold">Rôle / Type</th>
+                      <th className="p-3 font-semibold">Établissement & Activity</th>
                       <th className="p-3 font-semibold">Contact</th>
                       <th className="p-3 font-semibold">Statut Approbation</th>
                       <th className="p-3 font-semibold text-right">Actions</th>
@@ -978,6 +1043,17 @@ export default function AdminDashboardPage() {
                                 <span className="text-[10px] text-[#897362]">Inscrit le {u.registeredAt}</span>
                               </div>
                             </div>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-full ${
+                              u.role === 'COMPANY'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : u.role === 'INDIVIDUAL'
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : 'bg-blue-100 text-blue-900 border border-blue-300'
+                            }`}>
+                              {u.role === 'COMPANY' ? '🏢 Recruteur (Pro)' : u.role === 'INDIVIDUAL' ? '🏠 Particulier / Commerce' : '🎓 Étudiant'}
+                            </span>
                           </td>
                           <td className="p-3">
                             <span className="font-semibold text-[#191C1D] block">{u.university}</span>
@@ -1000,28 +1076,14 @@ export default function AdminDashboardPage() {
                             </span>
                           </td>
                           <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {u.status === 'PENDING' && (
-                                <>
-                                  <button
-                                    onClick={() => handleApprove(u.id)}
-                                    className="px-2.5 py-1 rounded bg-[#FF8C00] text-white font-semibold text-[11px] hover:bg-[#E67E00] transition cursor-pointer"
-                                  >
-                                    Approuver
-                                  </button>
-                                  <button
-                                    onClick={() => handleReject(u.id)}
-                                    className="px-2.5 py-1 rounded border border-[#126E0C] text-[#126E0C] font-semibold text-[11px] hover:bg-[#F0F9F0] transition cursor-pointer"
-                                  >
-                                    Rejeter
-                                  </button>
-                                </>
-                              )}
-                              {u.status === 'APPROVED' && (
-                                <span className="text-[11px] text-[#126E0C] font-bold flex items-center gap-1">
-                                  <Check className="w-3.5 h-3.5" /> Accès Actif
-                                </span>
-                              )}
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openDocumentModalForUser(u)}
+                                className="px-3 py-1.5 rounded-lg bg-[#FF8C00]/10 hover:bg-[#FF8C00]/20 text-[#904D00] border border-[#FF8C00]/30 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-[#FF8C00]" />
+                                <span>Examiner le Dossier 📄</span>
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1288,7 +1350,59 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-6 text-xs">
-              {selectedValidation.type === 'COMPANY' ? (
+              {selectedValidation.type === 'INDIVIDUAL' ? (
+                /* INDIVIDUAL DETAILS & DOCUMENTS */
+                <div className="space-y-5">
+                  <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E1E3E4] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#191C1D] block text-xs">🏠 Profil Particulier / Commerce Informel :</span>
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                        Profil Particulier
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[#564334]">
+                      <div>Nom & Prénom : <strong className="text-[#191C1D]">{selectedValidation.name}</strong></div>
+                      <div>Besoin / Emploi : <strong className="text-[#904D00] font-bold">{selectedValidation.subtitle}</strong></div>
+                      <div>Téléphone : <strong className="text-[#191C1D]">{selectedValidation.phone || 'N/A'}</strong></div>
+                      <div>Ville & Localisation : <strong className="text-[#191C1D]">{selectedValidation.city || 'Abidjan'}</strong></div>
+                      <div>Soumis le : <strong className="text-[#191C1D]">{selectedValidation.submittedAt}</strong></div>
+                    </div>
+
+                    {selectedValidation.bio && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1">Mot d&apos;accueil / Bio :</span>
+                        <p className="text-[#191C1D] bg-white p-2.5 rounded-lg border border-[#E1E3E4] italic">"{selectedValidation.bio}"</p>
+                      </div>
+                    )}
+
+                    {selectedValidation.perks && selectedValidation.perks.length > 0 && (
+                      <div className="pt-2 border-t border-[#E1E3E4]">
+                        <span className="font-semibold text-[#564334] block mb-1.5">Besoins de Missions :</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedValidation.perks.map((pk, idx) => (
+                            <span key={idx} className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                              ✓ {pk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-[#191C1D]">Pièces & Justificatifs Transmis pour Vérification :</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <SmartDocCard title="Photo Pièce d'Identité (CNI / Passeport)" icon="🪪" url={selectedValidation.idCardRectoUrl || selectedValidation.registrationDocUrl} onOpenZoom={openLightbox} />
+                      <SmartDocCard title="Photo Selfie de Confirmation" icon="📸" url={selectedValidation.selfieUrl || selectedValidation.avatar} onOpenZoom={openLightbox} />
+                      {selectedValidation.idCardVersoUrl && (
+                        <SmartDocCard title="Pièce d'Identité VERSO" icon="🪪" url={selectedValidation.idCardVersoUrl} onOpenZoom={openLightbox} />
+                      )}
+                      <SmartDocCard title="Photo de Profil (Avatar)" icon="👤" url={selectedValidation.avatar} onOpenZoom={openLightbox} />
+                    </div>
+                  </div>
+                </div>
+              ) : selectedValidation.type === 'COMPANY' ? (
                 /* COMPANY DETAILS */
                 <div className="space-y-5">
                   {selectedValidation.bannerUrl && (
@@ -1457,19 +1571,47 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-end gap-3">
-              <button
-                onClick={() => handleReject(selectedValidation.id)}
-                className="px-5 py-2.5 border-2 border-[#126E0C] text-[#126E0C] font-semibold text-xs rounded-lg hover:bg-[#F0F9F0] transition cursor-pointer"
-              >
-                Rejeter le Dossier
-              </button>
-              <button
-                onClick={() => handleApprove(selectedValidation.id)}
-                className="px-6 py-2.5 bg-[#FF8C00] text-white font-bold text-xs rounded-lg hover:bg-[#E67E00] shadow-sm transition cursor-pointer"
-              >
-                Approuver & Débloquer le Compte ✓
-              </button>
+            <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-end items-center gap-3">
+              {selectedValidation.status === 'APPROVED' ? (
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-bold text-[#126E0C] flex items-center gap-1.5 bg-[#126E0C]/10 border border-[#126E0C]/20 px-3 py-1.5 rounded-full">
+                    <CheckCircle2 className="w-4 h-4 text-[#126E0C]" /> Accès Actif & Dossier Validé ✓
+                  </span>
+                  <button
+                    onClick={() => handleReject(selectedValidation.id)}
+                    className="px-4 py-2 border border-[#BA1A1A] text-[#BA1A1A] font-semibold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                  >
+                    Rejeter / Suspendre le Compte
+                  </button>
+                </div>
+              ) : selectedValidation.status === 'REJECTED' ? (
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-bold text-[#BA1A1A] flex items-center gap-1.5 bg-[#FFDAD6] border border-[#BA1A1A]/20 px-3 py-1.5 rounded-full">
+                    <AlertCircle className="w-4 h-4 text-[#BA1A1A]" /> Dossier Actuellement Rejeté
+                  </span>
+                  <button
+                    onClick={() => handleApprove(selectedValidation.id)}
+                    className="px-5 py-2 bg-[#FF8C00] text-white font-bold text-xs rounded-lg hover:bg-[#E67E00] transition cursor-pointer shadow-xs"
+                  >
+                    Ré-approuver & Débloquer le Compte ✓
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleReject(selectedValidation.id)}
+                    className="px-5 py-2.5 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                  >
+                    Rejeter le Dossier ❌
+                  </button>
+                  <button
+                    onClick={() => handleApprove(selectedValidation.id)}
+                    className="px-6 py-2.5 bg-[#FF8C00] text-white font-extrabold text-xs rounded-lg hover:bg-[#E67E00] shadow-md transition cursor-pointer"
+                  >
+                    Approuver & Débloquer le Compte ✓
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

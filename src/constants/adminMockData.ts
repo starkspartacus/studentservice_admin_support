@@ -1,10 +1,11 @@
 export interface PendingValidation {
   id: string;
-  type: 'STUDENT' | 'COMPANY';
+  type: 'STUDENT' | 'COMPANY' | 'INDIVIDUAL' | string;
   name: string;
   subtitle: string;
   avatar?: string;
   logo?: string;
+  email?: string;
   university?: string;
   field?: string;
   studentId?: string;
