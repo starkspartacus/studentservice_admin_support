@@ -391,6 +391,7 @@ export default function AdminDashboardPage() {
       if (jobsRes?.data && Array.isArray(jobsRes.data) && jobsRes.data.length > 0) {
         const mappedJobs = jobsRes.data.map((j: any) => ({
           id: j._id,
+          companyId: j.companyId?._id || j.companyId || j.userId,
           title: j.title || 'Offre sans titre',
           companyName: j.companyName || 'Entreprise',
           companyLogo: j.companyLogo,
@@ -562,6 +563,43 @@ export default function AdminDashboardPage() {
     setValidations((prev) => prev.map((v) => (v.id === id ? { ...v, status: 'REJECTED' } : v)));
     setUsersList((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'REJECTED', verificationStatus: 'REJECTED' } : u)));
     if (isDocModalOpen) setIsDocModalOpen(false);
+  };
+
+  const handleApproveJob = async (jobId: string) => {
+    try {
+      const targetJob: any = jobsList.find((j: any) => j.id === jobId);
+      await jobsApi.updateJobStatus(jobId, 'ACTIVE');
+
+      const companyUserId = targetJob?.companyId || targetJob?.userId;
+      if (companyUserId) {
+        try {
+          await usersApi.updateUserStatus(companyUserId, 'APPROVED');
+        } catch (e) {
+          // background user approval attempt
+        }
+      }
+
+      showToast('Offre validée & certifiée avec succès ✓ Débloquée et visible par tous les étudiants !');
+      setJobsList((prev: any[]) => prev.map((j: any) => (j.id === jobId ? { ...j, status: 'ACTIVE', isPartner: true } : j)));
+      if (selectedJob?.id === jobId) {
+        setSelectedJob((prev: any) => (prev ? { ...prev, status: 'ACTIVE', isPartner: true } : null));
+      }
+    } catch (err) {
+      showToast('Erreur lors de la validation de l\'offre.');
+    }
+  };
+
+  const handleRejectJob = async (jobId: string) => {
+    try {
+      await jobsApi.updateJobStatus(jobId, 'MODERATED');
+      showToast('Offre rejetée / modérée par l\'administration.');
+      setJobsList((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'MODERATED' } : j)));
+      if (selectedJob?.id === jobId) {
+        setSelectedJob((prev: any) => (prev ? { ...prev, status: 'MODERATED' } : null));
+      }
+    } catch (err) {
+      showToast('Erreur lors du rejet de l\'offre.');
+    }
   };
 
   const handleSuspendJob = async (jobId: string) => {
@@ -1239,16 +1277,52 @@ export default function AdminDashboardPage() {
                         Détails complets →
                       </button>
 
-                      {job.status === 'SUSPENDED' ? (
+                      {job.status === 'PENDING' || job.status === 'DRAFT' ? (
                         <>
-                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#FFDAD6] text-[#93000A] shadow-xs">
-                            Offre Suspendue 🔴
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
+                            🟡 En Attente de Validation
                           </span>
                           <button
-                            onClick={() => handleReactivateJob(job.id)}
-                            className="px-3 py-1.5 bg-[#126E0C] text-white font-semibold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs"
+                            onClick={() => handleApproveJob(job.id)}
+                            className="px-3.5 py-1.5 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs flex items-center gap-1"
                           >
-                            Réactiver
+                            <span>Valider l'Offre ✓</span>
+                          </button>
+                          <button
+                            onClick={() => handleRejectJob(job.id)}
+                            className="px-3 py-1.5 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                          >
+                            Rejeter ❌
+                          </button>
+                        </>
+                      ) : job.status === 'MODERATED' ? (
+                        <>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-900 border border-rose-300 shadow-xs">
+                            ❌ Offre Rejetée / Modérée
+                          </span>
+                          <button
+                            onClick={() => handleApproveJob(job.id)}
+                            className="px-3.5 py-1.5 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs"
+                          >
+                            Valider & Activer ✓
+                          </button>
+                        </>
+                      ) : job.status === 'SUSPENDED' ? (
+                        <>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#FFDAD6] text-[#93000A] shadow-xs">
+                            🔴 Offre Suspendue
+                          </span>
+                          <button
+                            onClick={() => handleApproveJob(job.id)}
+                            className="px-3.5 py-1.5 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs"
+                          >
+                            Valider & Activer ✓
+                          </button>
+                          <button
+                            onClick={() => handleRejectJob(job.id)}
+                            className="px-3 py-1.5 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                          >
+                            Rejeter ❌
                           </button>
                         </>
                       ) : (
@@ -1257,10 +1331,22 @@ export default function AdminDashboardPage() {
                             Offre Active ✓
                           </span>
                           <button
+                            onClick={() => handleApproveJob(job.id)}
+                            className="px-3.5 py-1.5 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] transition cursor-pointer shadow-xs"
+                          >
+                            Valider l'Offre ✓
+                          </button>
+                          <button
                             onClick={() => handleSuspendJob(job.id)}
                             className="px-3 py-1.5 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
                           >
-                            Suspendre
+                            Suspendre ⏸️
+                          </button>
+                          <button
+                            onClick={() => handleRejectJob(job.id)}
+                            className="px-3 py-1.5 border border-slate-300 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                          >
+                            Rejeter ❌
                           </button>
                         </>
                       )}
@@ -1721,14 +1807,26 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-between items-center">
+            <div className="p-4 border-t border-[#E1E3E4] bg-[#F8F9FA] flex justify-between items-center flex-wrap gap-3">
               <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-                selectedJob.status === 'SUSPENDED' ? 'bg-[#FFDAD6] text-[#93000A]' : 'bg-[#9BF585] text-[#197211]'
+                selectedJob.status === 'SUSPENDED'
+                  ? 'bg-[#FFDAD6] text-[#93000A]'
+                  : selectedJob.status === 'MODERATED'
+                  ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                  : selectedJob.status === 'PENDING' || selectedJob.status === 'DRAFT'
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : 'bg-[#9BF585] text-[#197211]'
               }`}>
-                {selectedJob.status === 'SUSPENDED' ? 'Statut : Offre Suspendue 🔴' : 'Statut : Offre Active ✓'}
+                {selectedJob.status === 'SUSPENDED'
+                  ? 'Statut : Offre Suspendue 🔴'
+                  : selectedJob.status === 'MODERATED'
+                  ? 'Statut : Offre Rejetée / Modérée ❌'
+                  : selectedJob.status === 'PENDING' || selectedJob.status === 'DRAFT'
+                  ? 'Statut : En Attente de Validation Admin 🟡'
+                  : 'Statut : Offre Active ✓'}
               </span>
 
-              <div className="flex gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setIsJobModalOpen(false)}
                   className="px-4 py-2 border border-[#E1E3E4] text-[#564334] font-semibold text-xs rounded-lg hover:bg-gray-100 transition cursor-pointer"
@@ -1736,20 +1834,46 @@ export default function AdminDashboardPage() {
                   Fermer
                 </button>
 
+                <button
+                  onClick={() => handleApproveJob(selectedJob.id)}
+                  className="px-5 py-2 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] shadow-sm transition cursor-pointer flex items-center gap-1"
+                >
+                  <span>Valider l'Offre ✓</span>
+                </button>
+
                 {selectedJob.status === 'SUSPENDED' ? (
-                  <button
-                    onClick={() => handleReactivateJob(selectedJob.id)}
-                    className="px-5 py-2 bg-[#126E0C] text-white font-bold text-xs rounded-lg hover:bg-[#0E5409] shadow-sm transition cursor-pointer"
-                  >
-                    Réactiver l'Offre ✓
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleRejectJob(selectedJob.id)}
+                      className="px-4 py-2 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                    >
+                      Rejeter l'Offre ❌
+                    </button>
+                  </>
+                ) : selectedJob.status === 'ACTIVE' ? (
+                  <>
+                    <button
+                      onClick={() => handleSuspendJob(selectedJob.id)}
+                      className="px-4 py-2 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                    >
+                      Suspendre ⏸️
+                    </button>
+                    <button
+                      onClick={() => handleRejectJob(selectedJob.id)}
+                      className="px-4 py-2 border border-slate-300 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                    >
+                      Rejeter ❌
+                    </button>
+                  </>
                 ) : (
-                  <button
-                    onClick={() => handleSuspendJob(selectedJob.id)}
-                    className="px-5 py-2 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
-                  >
-                    Suspendre l'Offre 🔴
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleRejectJob(selectedJob.id)}
+                      className="px-4 py-2 border-2 border-[#BA1A1A] text-[#BA1A1A] font-bold text-xs rounded-lg hover:bg-[#FFDAD6] transition cursor-pointer"
+                    >
+                      Rejeter l'Offre ❌
+                    </button>
+                  </>
                 )}
               </div>
             </div>
